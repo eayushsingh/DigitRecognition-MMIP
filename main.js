@@ -206,27 +206,20 @@ class VoiceDigitApp {
       this.singleModeView.classList.add('hidden');
     }
 
-    // Re-render current result when mode changes
     if (this.currentResult) {
       const parsed = parseSpokenDigits(this.currentResult.rawText || this.currentResult.digitString, this.activeMode);
       this.renderParsedResult({ ...this.currentResult, ...parsed }, this.currentResult.confidence || 95);
     }
   }
 
-  /**
-   * Continuous real-time live PCM audio frame processing from microphone
-   */
   handleLiveAudioFrame(pcmData) {
     if (!pcmData || pcmData.length === 0) return;
 
-    // Extract 13 MFCC coefficients for live PCM frame
     const mfccResult = this.mfccExtractor.extractSignalMfcc(pcmData);
 
     if (mfccResult.framesMfcc.length > 0) {
-      // Predict digit distances using K-Means centroids
       const prediction = this.kmeansClassifier.predict(mfccResult.meanVector);
 
-      // Render live MFCC Spectrogram and K-Means Centroid Distances Chart
       this.mfccVisualizer.drawMfccHeatmap(mfccResult.framesMfcc, mfccResult.meanVector);
       this.mfccVisualizer.drawKMeansDistances(prediction.distances, prediction.predictedDigit);
 
@@ -236,19 +229,18 @@ class VoiceDigitApp {
         this.renderParsedResult({
           digits: [prediction.predictedDigit],
           digitString: String(prediction.predictedDigit),
+          cleanSpokenDigitsText: String(prediction.predictedDigit),
           formattedNumber: String(prediction.predictedDigit),
           singleDigit: prediction.predictedDigit,
-          phonetic: prediction.phonetic
+          phonetic: prediction.phonetic,
+          hasDigits: true
         }, prediction.confidence);
       }
     }
   }
 
-  /**
-   * Run MFCC & K-Means classification for test audio
-   */
   runKMeansClassification(targetDigit, labelText) {
-    this.handleStatusChange('simulating', `Extracting MFCCs & Classifying with K-Means: "${labelText}"`);
+    this.handleStatusChange('simulating', `Extracting MFCCs & Classifying with K-Means: Digit ${targetDigit}`);
 
     const pcm = this.kmeansClassifier.generateTestAudioPcm(targetDigit);
     const mfccResult = this.mfccExtractor.extractSignalMfcc(pcm);
@@ -262,17 +254,19 @@ class VoiceDigitApp {
       rawText: labelText,
       digits: [prediction.predictedDigit],
       digitString: String(prediction.predictedDigit),
+      cleanSpokenDigitsText: String(prediction.predictedDigit),
       formattedNumber: String(prediction.predictedDigit),
       singleDigit: prediction.predictedDigit,
       phonetic: prediction.phonetic,
       confidence: prediction.confidence,
+      hasDigits: true,
       engine: 'kmeans',
       timestamp: new Date().toLocaleTimeString()
     };
 
     this.currentResult = resultObj;
 
-    this.transcriptText.textContent = `Audio-MNIST MFCC K-Means: Spoken "${labelText}" -> Classified as Digit ${prediction.predictedDigit}`;
+    this.transcriptText.textContent = `Extracted Spoken Digits: "${prediction.predictedDigit}" (Audio-MNIST K-Means Model)`;
     this.confidenceTag.textContent = `K-Means Confidence: ${prediction.confidence}%`;
 
     this.renderParsedResult(resultObj, prediction.confidence);
@@ -289,17 +283,25 @@ class VoiceDigitApp {
   handleSpeechResult(data) {
     const { transcript, isFinal, confidence } = data;
 
+    const parsed = parseSpokenDigits(transcript, this.activeMode);
+
     if (this.activeEngine === 'kmeans') {
-      const parsedSingle = parseSpokenDigits(transcript, 'S');
-      const firstDigit = parsedSingle.singleDigit !== null ? parsedSingle.singleDigit : 7;
+      const firstDigit = parsed.singleDigit !== null ? parsed.singleDigit : 7;
       this.runKMeansClassification(firstDigit, transcript);
       return;
     }
 
-    this.transcriptText.textContent = `"${transcript}"`;
+    if (!parsed.hasDigits) {
+      // Speech contained non-numeric sentences with no digits
+      this.transcriptText.textContent = `⚠️ No digits spoken in speech: "${transcript}". Please speak numbers (0–9).`;
+      this.confidenceTag.textContent = `Confidence: ${confidence}%`;
+      return;
+    }
+
+    // Display STRICTLY extracted digits ONLY
+    this.transcriptText.textContent = `Extracted Spoken Digits: "${parsed.cleanSpokenDigitsText}"`;
     this.confidenceTag.textContent = `Confidence: ${confidence}%`;
 
-    const parsed = parseSpokenDigits(transcript, this.activeMode);
     this.currentResult = {
       ...parsed,
       rawText: transcript,
@@ -322,7 +324,6 @@ class VoiceDigitApp {
 
   renderParsedResult(parsed, confidence) {
     if (this.activeMode === 'S') {
-      // Single Digit Mode
       if (parsed.singleDigit !== null && parsed.singleDigit !== undefined) {
         this.singleDigitValue.textContent = parsed.singleDigit;
         this.singleDigitValue.classList.remove('pop');
@@ -366,7 +367,7 @@ class VoiceDigitApp {
 
     if (status === 'listening') {
       this.micBtn.classList.add('active');
-      this.micLabel.textContent = 'Listening... (Click to stop)';
+      this.micLabel.textContent = 'Listening for numbers... (Click to stop)';
     } else {
       this.micBtn.classList.remove('active');
       this.micLabel.textContent = 'Click to Start Listening';
@@ -375,7 +376,7 @@ class VoiceDigitApp {
 
   clearDisplay() {
     this.currentResult = null;
-    this.transcriptText.textContent = 'Waiting for spoken input...';
+    this.transcriptText.textContent = 'Waiting for spoken digits...';
     this.confidenceTag.textContent = 'Confidence: --%';
     this.singleDigitValue.textContent = '?';
     this.singlePhoneticLabel.textContent = 'Speak any number 0–9';
@@ -400,14 +401,17 @@ class VoiceDigitApp {
   }
 
   recordHistory(resultItem) {
-    if (!resultItem.digitString) return;
+    if (!resultItem.digitString || !resultItem.hasDigits) return;
+
+    // Display ONLY extracted numbers in history log
+    const cleanDisplayDigits = resultItem.cleanSpokenDigitsText || resultItem.digitString;
 
     this.historyLog.unshift({
       id: Date.now(),
       time: resultItem.timestamp || new Date().toLocaleTimeString(),
       engine: resultItem.engine || this.activeEngine,
       mode: this.activeMode,
-      transcript: resultItem.rawText,
+      transcript: cleanDisplayDigits,
       digits: resultItem.digitString,
       confidence: resultItem.confidence || 95
     });
@@ -458,7 +462,7 @@ class VoiceDigitApp {
     if (this.historyLog.length === 0) {
       this.historyTableBody.innerHTML = `
         <tr class="empty-row">
-          <td colspan="7">No spoken recognition history recorded yet. Speak into the mic or test a sample above!</td>
+          <td colspan="7">No spoken digits history recorded yet. Speak numbers into the mic or test a sample above!</td>
         </tr>`;
       return;
     }
@@ -468,7 +472,7 @@ class VoiceDigitApp {
         <td>${item.time}</td>
         <td><span class="engine-tag ${item.engine}">${item.engine === 'kmeans' ? 'MFCC K-Means' : 'Web Speech'}</span></td>
         <td><span class="mode-tag ${item.mode}">${item.mode === 'S' ? 'Single (S)' : 'Multi (M)'}</span></td>
-        <td>"${escapeHTML(item.transcript)}"</td>
+        <td><span class="digit-pill">${escapeHTML(item.transcript)}</span></td>
         <td><span class="digit-pill">${escapeHTML(item.digits)}</span></td>
         <td>${item.confidence}%</td>
         <td>

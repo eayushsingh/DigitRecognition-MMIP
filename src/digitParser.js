@@ -1,6 +1,6 @@
 /**
  * Digit Parser Utility for Voice-Based Digit Recognition S/M
- * Converts spoken words, homophones, number words, and sentences into numeric digits.
+ * Strict Digit Extractor: Converts spoken text into numeric digits, stripping non-number conversational filler words.
  */
 
 // Basic single digit word mapping & common Speech API homophones
@@ -36,7 +36,7 @@ const MULTIPLIERS = {
 };
 
 /**
- * Parse a phrase into digit arrays and structured number representations.
+ * Parse a phrase into digit arrays and structured number representations, stripping non-digit filler words.
  * @param {string} text - Raw speech transcript text
  * @param {string} mode - 'S' (Single Digit Focus) or 'M' (Multiple Digits)
  * @returns {Object} Parse result
@@ -47,9 +47,11 @@ export function parseSpokenDigits(text, mode = 'M') {
       rawText: text || '',
       digits: [],
       digitString: '',
+      cleanSpokenDigitsText: '',
       formattedNumber: '',
       singleDigit: null,
       phonetic: '',
+      hasDigits: false,
       confidenceNote: 'No input text detected'
     };
   }
@@ -59,7 +61,6 @@ export function parseSpokenDigits(text, mode = 'M') {
   // Handle modifier phrases like "double 7" -> "7 7", "triple 0" -> "0 0 0"
   let processedText = expandModifiers(normalized);
 
-  // Extract digits directly present in text (e.g. "123", "4", "99")
   let digitsExtracted = [];
 
   // Split into token words
@@ -113,23 +114,28 @@ export function parseSpokenDigits(text, mode = 'M') {
       continue;
     }
 
+    // Non-digit word token - ignored / stripped out
     i++;
   }
 
   const digitString = digitsExtracted.join('');
+  const hasDigits = digitsExtracted.length > 0;
+  const cleanSpokenDigitsText = hasDigits ? digitsExtracted.join(' ') : '';
 
   if (mode === 'S') {
-    // Single Digit Mode: Take the primary or first valid digit
-    const singleDigit = digitsExtracted.length > 0 ? digitsExtracted[0] : null;
+    // Single Digit Mode: Take primary digit
+    const singleDigit = hasDigits ? digitsExtracted[0] : null;
     const phonetic = singleDigit !== null ? PHONETIC_NAMES[singleDigit] : '';
     
     return {
       rawText: text,
       digits: singleDigit !== null ? [singleDigit] : [],
       digitString: singleDigit !== null ? String(singleDigit) : '',
+      cleanSpokenDigitsText: singleDigit !== null ? String(singleDigit) : '',
       formattedNumber: singleDigit !== null ? String(singleDigit) : 'N/A',
       singleDigit,
       phonetic,
+      hasDigits: singleDigit !== null,
       confidenceNote: singleDigit !== null ? `Single Digit '${singleDigit}' (${phonetic}) recognized` : 'No digit detected'
     };
   } else {
@@ -138,10 +144,12 @@ export function parseSpokenDigits(text, mode = 'M') {
       rawText: text,
       digits: digitsExtracted,
       digitString,
+      cleanSpokenDigitsText,
       formattedNumber: digitString ? formatLargeDigitSequence(digitString) : 'N/A',
-      singleDigit: digitsExtracted.length > 0 ? digitsExtracted[0] : null,
-      phonetic: digitsExtracted.length > 0 ? PHONETIC_NAMES[digitsExtracted[0]] : '',
-      confidenceNote: digitsExtracted.length > 0 ? `Recognized ${digitsExtracted.length} digit(s)` : 'No digits detected'
+      singleDigit: hasDigits ? digitsExtracted[0] : null,
+      phonetic: hasDigits ? PHONETIC_NAMES[digitsExtracted[0]] : '',
+      hasDigits,
+      confidenceNote: hasDigits ? `Extracted ${digitsExtracted.length} digit(s): ${cleanSpokenDigitsText}` : 'No digits detected'
     };
   }
 }
@@ -217,13 +225,11 @@ function parseWordNumberSequence(tokens, startIndex) {
  */
 function formatLargeDigitSequence(digitsStr) {
   if (!digitsStr) return '';
-  // If digits are standard number format under 15 digits
   if (digitsStr.length <= 15 && !digitsStr.startsWith('0')) {
     const num = Number(digitsStr);
     if (!isNaN(num)) {
       return num.toLocaleString();
     }
   }
-  // Group digits in blocks of 3 for raw sequence readability
   return digitsStr.replace(/(.{4})/g, '$1 ').trim();
 }
