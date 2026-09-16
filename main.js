@@ -1,6 +1,6 @@
 /**
- * Voice Digit Recognition S/M - Main Application Controller
- * Real-time Speech API & Audio-MNIST MFCC K-Means Engine
+ * Voice Digit Recognition - Main Application Controller
+ * Clean production build: shows ONLY recognized digits, no verbose UI
  */
 
 import { SpeechEngine } from './src/speechEngine.js';
@@ -13,114 +13,73 @@ import { MfccVisualizer } from './src/mfccVisualizer.js';
 
 class VoiceDigitApp {
   constructor() {
-    this.activeMode = 'S'; // 'S' = Single Digit, 'M' = Multiple Digits
-    this.activeEngine = 'speech'; // 'speech' = Web Speech API, 'kmeans' = Audio-MNIST MFCC + K-Means ML
+    this.activeMode = 'S';
+    this.activeEngine = 'speech';
     this.currentResult = null;
     this.historyLog = this.loadHistory();
-    this.stats = {
-      totalCount: 0,
-      digitFrequency: {},
-      totalConfidenceSum: 0
-    };
 
     this.initDOM();
     this.initModules();
     this.bindEvents();
-    this.updateStatsUI();
-    this.renderHistoryTable();
+    this.renderHistory();
   }
 
   initDOM() {
-    // Engine & Mode Selectors
     this.engineSpeechBtn = document.getElementById('engineSpeechBtn');
     this.engineKMeansBtn = document.getElementById('engineKMeansBtn');
     this.modeBtnS = document.getElementById('modeBtnS');
     this.modeBtnM = document.getElementById('modeBtnM');
 
-    // Mic Controls & Status
     this.micBtn = document.getElementById('micBtn');
     this.micLabel = document.getElementById('micLabel');
-    this.statusPill = document.getElementById('statusPill');
-    this.statusText = document.getElementById('statusText');
 
-    // ML Dashboard
     this.mlDashboard = document.getElementById('mlDashboard');
     this.kmeansWinnerTag = document.getElementById('kmeansWinnerTag');
 
-    // Display Views
     this.singleModeView = document.getElementById('singleModeView');
     this.multiModeView = document.getElementById('multiModeView');
     this.singleDigitValue = document.getElementById('singleDigitValue');
     this.singlePhoneticLabel = document.getElementById('singlePhoneticLabel');
     this.digitCardsContainer = document.getElementById('digitCardsContainer');
-    this.formattedResultBar = document.getElementById('formattedResultBar');
-    this.formattedValueDisplay = document.getElementById('formattedValueDisplay');
 
-    // Transcript & Info
-    this.transcriptText = document.getElementById('transcriptText');
-    this.confidenceTag = document.getElementById('confidenceTag');
-
-    // Toolbar Controls
-    this.copyBtn = document.getElementById('copyBtn');
-    this.speakResultBtn = document.getElementById('speakResultBtn');
-    this.clearBtn = document.getElementById('clearBtn');
-    this.ttsToggle = document.getElementById('ttsToggle');
-    this.langSelect = document.getElementById('langSelect');
-
-    // Stats Grid
-    this.statTotalCount = document.getElementById('statTotalCount');
-    this.statTopDigit = document.getElementById('statTopDigit');
-    this.statAvgConfidence = document.getElementById('statAvgConfidence');
-    this.statLastTime = document.getElementById('statLastTime');
-
-    // History Table
-    this.historyTableBody = document.getElementById('historyTableBody');
-    this.exportHistoryBtn = document.getElementById('exportHistoryBtn');
+    this.historyList = document.getElementById('historyList');
     this.clearHistoryBtn = document.getElementById('clearHistoryBtn');
     this.toastContainer = document.getElementById('toastContainer');
   }
 
   initModules() {
-    // MFCC & K-Means Engine
     this.mfccExtractor = new MfccExtractor({ sampleRate: 16000, numCoeffs: 13 });
     this.kmeansClassifier = new KMeansClassifier();
 
-    // MFCC & K-Means Canvas Visualizer
     const mfccCanvas = document.getElementById('mfccCanvas');
     const kmeansCanvas = document.getElementById('kmeansCanvas');
     this.mfccVisualizer = new MfccVisualizer(mfccCanvas, kmeansCanvas);
     this.mfccVisualizer.drawKMeansDistances({}, null);
 
-    // Audio Visualizer with Live Microphone Frame Streaming
     const audioCanvas = document.getElementById('audioCanvas');
     this.visualizer = new AudioVisualizer(audioCanvas, {
       onAudioFrame: (pcmData) => this.handleLiveAudioFrame(pcmData)
     });
 
-    // Audio Feedback & TTS
     this.audioFeedback = new AudioFeedback();
-    this.audioFeedback.setSpeechEnabled(this.ttsToggle.checked);
+    this.audioFeedback.setSpeechEnabled(true);
 
-    // Web Speech Engine
     this.speechEngine = new SpeechEngine({
-      language: this.langSelect.value,
+      language: 'en-US',
       continuous: true,
       onResult: (data) => this.handleSpeechResult(data),
-      onStatusChange: (status, message) => this.handleStatusChange(status, message),
-      onError: (err, msg) => this.showToast(msg, 'error')
+      onStatusChange: (status) => this.handleStatusChange(status),
+      onError: () => {} // Silently handle errors
     });
   }
 
   bindEvents() {
-    // Engine Selector Buttons
     this.engineSpeechBtn.addEventListener('click', () => this.setEngine('speech'));
     this.engineKMeansBtn.addEventListener('click', () => this.setEngine('kmeans'));
 
-    // Mode Selector Buttons
     this.modeBtnS.addEventListener('click', () => this.setMode('S'));
     this.modeBtnM.addEventListener('click', () => this.setMode('M'));
 
-    // Mic Toggle Button
     this.micBtn.addEventListener('click', () => {
       if (this.speechEngine.isListening) {
         this.speechEngine.stop();
@@ -133,12 +92,10 @@ class VoiceDigitApp {
       }
     });
 
-    // Preset Chips
     document.querySelectorAll('.preset-chips .chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const speakText = chip.getAttribute('data-speak');
         const targetDigit = parseInt(chip.getAttribute('data-digit') || '7', 10);
-
         this.visualizer.triggerPulse();
 
         if (this.activeEngine === 'kmeans') {
@@ -149,66 +106,31 @@ class VoiceDigitApp {
       });
     });
 
-    // Toolbar Buttons
-    this.copyBtn.addEventListener('click', () => this.copyCurrentDigits());
-    this.speakResultBtn.addEventListener('click', () => {
-      if (this.currentResult && this.currentResult.digitString) {
-        this.audioFeedback.speakDigits(this.currentResult.digitString);
-      } else {
-        this.showToast('No digit sequence available to read aloud', 'info');
-      }
-    });
-    this.clearBtn.addEventListener('click', () => this.clearDisplay());
-
-    // Settings
-    this.ttsToggle.addEventListener('change', (e) => {
-      this.audioFeedback.setSpeechEnabled(e.target.checked);
-    });
-
-    this.langSelect.addEventListener('change', (e) => {
-      this.speechEngine.setLanguage(e.target.value);
-      this.showToast(`Language set to ${e.target.selectedOptions[0].text}`);
-    });
-
-    // History Log Actions
-    this.clearHistoryBtn.addEventListener('click', () => this.clearHistory());
-    this.exportHistoryBtn.addEventListener('click', () => this.exportHistoryJSON());
+    if (this.clearHistoryBtn) {
+      this.clearHistoryBtn.addEventListener('click', () => this.clearHistory());
+    }
   }
 
   setEngine(engine) {
     if (this.activeEngine === engine) return;
     this.activeEngine = engine;
 
-    if (engine === 'speech') {
-      this.engineSpeechBtn.classList.add('active');
-      this.engineKMeansBtn.classList.remove('active');
-      this.showToast('Engine: Web Speech API');
-    } else {
-      this.engineKMeansBtn.classList.add('active');
-      this.engineSpeechBtn.classList.remove('active');
-      this.showToast('Engine: Audio-MNIST MFCC + K-Means');
-    }
+    this.engineSpeechBtn.classList.toggle('active', engine === 'speech');
+    this.engineKMeansBtn.classList.toggle('active', engine === 'kmeans');
   }
 
   setMode(mode) {
     if (this.activeMode === mode) return;
     this.activeMode = mode;
 
-    if (mode === 'S') {
-      this.modeBtnS.classList.add('active');
-      this.modeBtnM.classList.remove('active');
-      this.singleModeView.classList.remove('hidden');
-      this.multiModeView.classList.add('hidden');
-    } else {
-      this.modeBtnM.classList.add('active');
-      this.modeBtnS.classList.remove('active');
-      this.multiModeView.classList.remove('hidden');
-      this.singleModeView.classList.add('hidden');
-    }
+    this.modeBtnS.classList.toggle('active', mode === 'S');
+    this.modeBtnM.classList.toggle('active', mode === 'M');
+    this.singleModeView.classList.toggle('hidden', mode !== 'S');
+    this.multiModeView.classList.toggle('hidden', mode !== 'M');
 
     if (this.currentResult) {
       const parsed = parseSpokenDigits(this.currentResult.rawText || this.currentResult.digitString, this.activeMode);
-      this.renderParsedResult({ ...this.currentResult, ...parsed }, this.currentResult.confidence || 95);
+      this.renderParsedResult({ ...this.currentResult, ...parsed });
     }
   }
 
@@ -223,41 +145,33 @@ class VoiceDigitApp {
       this.mfccVisualizer.drawMfccHeatmap(mfccResult.framesMfcc, mfccResult.meanVector);
       this.mfccVisualizer.drawKMeansDistances(prediction.distances, prediction.predictedDigit);
 
-      this.kmeansWinnerTag.textContent = `Live Top 1: Digit ${prediction.predictedDigit} (${prediction.phonetic}) - ${prediction.confidence}%`;
+      this.kmeansWinnerTag.textContent = `${prediction.predictedDigit}`;
 
       if (this.activeEngine === 'kmeans' && prediction.confidence > 75) {
         this.renderParsedResult({
           digits: [prediction.predictedDigit],
           digitString: String(prediction.predictedDigit),
-          cleanSpokenDigitsText: String(prediction.predictedDigit),
-          formattedNumber: String(prediction.predictedDigit),
           singleDigit: prediction.predictedDigit,
-          phonetic: prediction.phonetic,
           hasDigits: true
-        }, prediction.confidence);
+        });
       }
     }
   }
 
   runKMeansClassification(targetDigit, labelText) {
-    this.handleStatusChange('simulating', `Extracting MFCCs & Classifying with K-Means: Digit ${targetDigit}`);
-
     const pcm = this.kmeansClassifier.generateTestAudioPcm(targetDigit);
     const mfccResult = this.mfccExtractor.extractSignalMfcc(pcm);
     const prediction = this.kmeansClassifier.predict(mfccResult.meanVector);
 
     this.mfccVisualizer.drawMfccHeatmap(mfccResult.framesMfcc, mfccResult.meanVector);
     this.mfccVisualizer.drawKMeansDistances(prediction.distances, prediction.predictedDigit);
-    this.kmeansWinnerTag.textContent = `Top 1: Digit ${prediction.predictedDigit} (${prediction.phonetic}) - ${prediction.confidence}%`;
+    this.kmeansWinnerTag.textContent = `${prediction.predictedDigit}`;
 
     const resultObj = {
       rawText: labelText,
       digits: [prediction.predictedDigit],
       digitString: String(prediction.predictedDigit),
-      cleanSpokenDigitsText: String(prediction.predictedDigit),
-      formattedNumber: String(prediction.predictedDigit),
       singleDigit: prediction.predictedDigit,
-      phonetic: prediction.phonetic,
       confidence: prediction.confidence,
       hasDigits: true,
       engine: 'kmeans',
@@ -265,24 +179,14 @@ class VoiceDigitApp {
     };
 
     this.currentResult = resultObj;
-
-    this.transcriptText.textContent = `Extracted Spoken Digits: "${prediction.predictedDigit}" (Audio-MNIST K-Means Model)`;
-    this.confidenceTag.textContent = `K-Means Confidence: ${prediction.confidence}%`;
-
-    this.renderParsedResult(resultObj, prediction.confidence);
+    this.renderParsedResult(resultObj);
     this.audioFeedback.playDigitSound(prediction.predictedDigit);
     this.audioFeedback.speakDigits(prediction.predictedDigit);
-
     this.recordHistory(resultObj);
-
-    setTimeout(() => {
-      this.handleStatusChange('idle', 'Ready. Speak into mic or click a preset chip.');
-    }, 600);
   }
 
   handleSpeechResult(data) {
     const { transcript, isFinal, confidence } = data;
-
     const parsed = parseSpokenDigits(transcript, this.activeMode);
 
     if (this.activeEngine === 'kmeans') {
@@ -291,16 +195,8 @@ class VoiceDigitApp {
       return;
     }
 
-    if (!parsed.hasDigits) {
-      // Speech contained non-numeric sentences with no digits
-      this.transcriptText.textContent = `⚠️ No digits spoken in speech: "${transcript}". Please speak numbers (0–9).`;
-      this.confidenceTag.textContent = `Confidence: ${confidence}%`;
-      return;
-    }
-
-    // Display STRICTLY extracted digits ONLY
-    this.transcriptText.textContent = `Extracted Spoken Digits: "${parsed.cleanSpokenDigitsText}"`;
-    this.confidenceTag.textContent = `Confidence: ${confidence}%`;
+    // If no digits found, silently ignore — don't show any warning
+    if (!parsed.hasDigits) return;
 
     this.currentResult = {
       ...parsed,
@@ -310,7 +206,7 @@ class VoiceDigitApp {
       timestamp: new Date().toLocaleTimeString()
     };
 
-    this.renderParsedResult(this.currentResult, confidence);
+    this.renderParsedResult(this.currentResult);
 
     if (parsed.digits && parsed.digits.length > 0) {
       this.audioFeedback.playDigitSound(parsed.digits[0]);
@@ -322,25 +218,18 @@ class VoiceDigitApp {
     }
   }
 
-  renderParsedResult(parsed, confidence) {
+  renderParsedResult(parsed) {
     if (this.activeMode === 'S') {
-      if (parsed.singleDigit !== null && parsed.singleDigit !== undefined) {
-        this.singleDigitValue.textContent = parsed.singleDigit;
+      const digit = parsed.singleDigit ?? (parsed.digits?.[0] ?? null);
+      if (digit !== null && digit !== undefined) {
+        this.singleDigitValue.textContent = digit;
         this.singleDigitValue.classList.remove('pop');
         void this.singleDigitValue.offsetWidth;
         this.singleDigitValue.classList.add('pop');
-        this.singlePhoneticLabel.textContent = `${parsed.phonetic || ''} (Digit ${parsed.singleDigit})`;
-      } else if (parsed.digits && parsed.digits.length > 0) {
-        this.singleDigitValue.textContent = parsed.digits[0];
-        this.singlePhoneticLabel.textContent = `Digit ${parsed.digits[0]}`;
-      } else {
-        this.singleDigitValue.textContent = '?';
-        this.singlePhoneticLabel.textContent = 'Speak any number 0–9';
+        this.singlePhoneticLabel.textContent = '';
       }
     } else {
-      // Multiple Digits Mode (M)
       this.digitCardsContainer.innerHTML = '';
-
       const digitsArray = parsed.digits || [];
 
       if (digitsArray.length > 0) {
@@ -351,165 +240,58 @@ class VoiceDigitApp {
           card.textContent = digit;
           this.digitCardsContainer.appendChild(card);
         });
-
-        this.formattedResultBar.classList.remove('hidden');
-        this.formattedValueDisplay.textContent = parsed.formattedNumber || parsed.digitString || digitsArray.join('');
       } else {
-        this.digitCardsContainer.innerHTML = `<div class="placeholder-msg">Speak a number sequence (e.g. "7 3 9 4", "forty-two", "007")</div>`;
-        this.formattedResultBar.classList.add('hidden');
+        this.digitCardsContainer.innerHTML = `<div class="placeholder-msg">Say a number</div>`;
       }
     }
   }
 
-  handleStatusChange(status, message) {
-    this.statusText.textContent = message;
-    this.statusPill.className = `status-pill ${status}`;
-
+  handleStatusChange(status) {
     if (status === 'listening') {
       this.micBtn.classList.add('active');
-      this.micLabel.textContent = 'Listening for numbers... (Click to stop)';
+      this.micLabel.textContent = 'Listening…';
     } else {
       this.micBtn.classList.remove('active');
-      this.micLabel.textContent = 'Click to Start Listening';
-    }
-  }
-
-  clearDisplay() {
-    this.currentResult = null;
-    this.transcriptText.textContent = 'Waiting for spoken digits...';
-    this.confidenceTag.textContent = 'Confidence: --%';
-    this.singleDigitValue.textContent = '?';
-    this.singlePhoneticLabel.textContent = 'Speak any number 0–9';
-    this.digitCardsContainer.innerHTML = `<div class="placeholder-msg">Speak a number sequence (e.g. "7 3 9 4", "forty-two", "007")</div>`;
-    this.formattedResultBar.classList.add('hidden');
-    this.mfccVisualizer.drawMfccHeatmap([], new Array(13).fill(0));
-    this.mfccVisualizer.drawKMeansDistances({}, null);
-    this.kmeansWinnerTag.textContent = 'Top 1: Digits 0–9';
-    this.showToast('Display cleared');
-  }
-
-  copyCurrentDigits() {
-    if (this.currentResult && this.currentResult.digitString) {
-      navigator.clipboard.writeText(this.currentResult.digitString).then(() => {
-        this.showToast(`Copied digits "${this.currentResult.digitString}" to clipboard!`);
-      }).catch(() => {
-        this.showToast(`Digits: ${this.currentResult.digitString}`);
-      });
-    } else {
-      this.showToast('No recognized digits to copy', 'error');
+      this.micLabel.textContent = 'Tap to listen';
     }
   }
 
   recordHistory(resultItem) {
     if (!resultItem.digitString || !resultItem.hasDigits) return;
 
-    // Display ONLY extracted numbers in history log
-    const cleanDisplayDigits = resultItem.cleanSpokenDigitsText || resultItem.digitString;
-
     this.historyLog.unshift({
       id: Date.now(),
       time: resultItem.timestamp || new Date().toLocaleTimeString(),
-      engine: resultItem.engine || this.activeEngine,
-      mode: this.activeMode,
-      transcript: cleanDisplayDigits,
       digits: resultItem.digitString,
-      confidence: resultItem.confidence || 95
+      engine: resultItem.engine || this.activeEngine
     });
 
-    if (this.historyLog.length > 50) {
-      this.historyLog.pop();
-    }
+    if (this.historyLog.length > 50) this.historyLog.pop();
 
     this.saveHistory();
-    this.updateStats(resultItem);
-    this.renderHistoryTable();
+    this.renderHistory();
   }
 
-  updateStats(item) {
-    this.stats.totalCount++;
-    this.stats.totalConfidenceSum += (item.confidence || 95);
+  renderHistory() {
+    if (!this.historyList) return;
 
-    if (item.digits) {
-      String(item.digits).split('').forEach(d => {
-        this.stats.digitFrequency[d] = (this.stats.digitFrequency[d] || 0) + 1;
-      });
-    }
-
-    this.updateStatsUI(item.time);
-  }
-
-  updateStatsUI(lastTimeStr = '--:--') {
-    this.statTotalCount.textContent = this.historyLog.length;
-
-    let topDigit = '-';
-    let maxFreq = 0;
-    Object.entries(this.stats.digitFrequency).forEach(([digit, freq]) => {
-      if (freq > maxFreq) {
-        maxFreq = freq;
-        topDigit = digit;
-      }
-    });
-    this.statTopDigit.textContent = topDigit;
-
-    const avgConf = this.stats.totalCount > 0 
-      ? Math.round(this.stats.totalConfidenceSum / this.stats.totalCount) 
-      : 0;
-    this.statAvgConfidence.textContent = `${avgConf}%`;
-    this.statLastTime.textContent = lastTimeStr;
-  }
-
-  renderHistoryTable() {
     if (this.historyLog.length === 0) {
-      this.historyTableBody.innerHTML = `
-        <tr class="empty-row">
-          <td colspan="7">No spoken digits history recorded yet. Speak numbers into the mic or test a sample above!</td>
-        </tr>`;
+      this.historyList.innerHTML = `<div class="history-empty">No digits recognized yet</div>`;
       return;
     }
 
-    this.historyTableBody.innerHTML = this.historyLog.map(item => `
-      <tr>
-        <td>${item.time}</td>
-        <td><span class="engine-tag ${item.engine}">${item.engine === 'kmeans' ? 'MFCC K-Means' : 'Web Speech'}</span></td>
-        <td><span class="mode-tag ${item.mode}">${item.mode === 'S' ? 'Single (S)' : 'Multi (M)'}</span></td>
-        <td><span class="digit-pill">${escapeHTML(item.transcript)}</span></td>
-        <td><span class="digit-pill">${escapeHTML(item.digits)}</span></td>
-        <td>${item.confidence}%</td>
-        <td>
-          <button type="button" class="btn btn-sm btn-outline copy-row-btn" data-digits="${escapeHTML(item.digits)}">Copy</button>
-        </td>
-      </tr>
+    this.historyList.innerHTML = this.historyLog.map(item => `
+      <div class="history-item">
+        <span class="history-digits">${escapeHTML(item.digits)}</span>
+        <span class="history-meta">${item.time}</span>
+      </div>
     `).join('');
-
-    this.historyTableBody.querySelectorAll('.copy-row-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const digits = btn.getAttribute('data-digits');
-        navigator.clipboard.writeText(digits);
-        this.showToast(`Copied "${digits}"`);
-      });
-    });
   }
 
   clearHistory() {
     this.historyLog = [];
-    this.stats = { totalCount: 0, digitFrequency: {}, totalConfidenceSum: 0 };
     this.saveHistory();
-    this.renderHistoryTable();
-    this.updateStatsUI();
-    this.showToast('History log cleared');
-  }
-
-  exportHistoryJSON() {
-    if (this.historyLog.length === 0) {
-      this.showToast('History log is empty', 'error');
-      return;
-    }
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.historyLog, null, 2));
-    const dlAnchorElem = document.createElement('a');
-    dlAnchorElem.setAttribute("href", dataStr);
-    dlAnchorElem.setAttribute("download", `digit_recognition_log_${Date.now()}.json`);
-    dlAnchorElem.click();
-    this.showToast('Exported history as JSON');
+    this.renderHistory();
   }
 
   loadHistory() {
@@ -524,20 +306,19 @@ class VoiceDigitApp {
   saveHistory() {
     try {
       localStorage.setItem('voice_digit_recognition_history', JSON.stringify(this.historyLog));
-    } catch (e) {
-    }
+    } catch (e) {}
   }
 
-  showToast(message, type = 'info') {
+  showToast(message) {
     const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
+    toast.className = 'toast';
     toast.textContent = message;
     this.toastContainer.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
       toast.style.transition = 'opacity 0.3s ease';
       setTimeout(() => toast.remove(), 300);
-    }, 2800);
+    }, 2000);
   }
 }
 
