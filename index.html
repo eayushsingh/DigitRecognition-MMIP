@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Digit Recognition S/M - Web Speech &amp; Audio-MNIST MFCC K-Means</title>
+  <meta name="description" content="Recognize spoken numbers and digits in real-time from voice input using Web Speech API or Audio-MNIST MFCC feature extraction with K-Means clustering.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-group">
+        <div class="logo-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+            <line x1="8" y1="22" x2="16" y2="22"></line>
+          </svg>
+        </div>
+        <div>
+          <h1 class="app-title">Digit Recognizer <span class="badge-sm">S / M</span></h1>
+          <p class="app-subtitle">Audio-MNIST MFCC + K-Means Engine</p>
+        </div>
+      </div>
+
+      <!-- Engine Selector & Mode Switchers -->
+      <div class="header-controls">
+        <div class="engine-selector-pill" id="engineSelector">
+          <button type="button" class="engine-btn active" data-engine="speech" id="engineSpeechBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path></svg>
+            Web Speech
+          </button>
+          <button type="button" class="engine-btn" data-engine="kmeans" id="engineKMeansBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+            MFCC + K-Means
+          </button>
+        </div>
+
+        <div class="header-mode-toggle" id="headerModeToggle">
+          <button type="button" class="mode-btn active" data-mode="S" id="modeBtnS">
+            <span class="mode-key">S</span> Single
+          </button>
+          <button type="button" class="mode-btn" data-mode="M" id="modeBtnM">
+            <span class="mode-key">M</span> Multi
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Visualizer & Recording Controls -->
+    <section class="visualizer-section">
+      <div class="canvas-wrapper">
+        <canvas id="audioCanvas"></canvas>
+        <div class="canvas-overlay">
+          <div class="status-pill idle" id="statusPill">
+            <span class="status-dot"></span>
+            <span id="statusText">Ready. Click mic or select preset to test.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mic-controls">
+        <button type="button" class="mic-btn" id="micBtn" aria-label="Toggle Microphone Listening">
+          <div class="mic-pulse-ring"></div>
+          <svg class="mic-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+            <line x1="8" y1="22" x2="16" y2="22"></line>
+          </svg>
+        </button>
+        <div class="mic-label" id="micLabel">Click to Start Listening</div>
+      </div>
+    </section>
+
+    <!-- Audio-MNIST MFCC & K-Means Machine Learning Visualizer Dashboard -->
+    <section class="ml-dashboard-section" id="mlDashboard">
+      <div class="ml-card">
+        <div class="ml-card-header">
+          <span class="ml-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+            13-Coefficient MFCC Feature Spectrogram
+          </span>
+          <span class="ml-badge">26 Mel Filters &bull; DCT-II</span>
+        </div>
+        <div class="canvas-container-sm">
+          <canvas id="mfccCanvas"></canvas>
+        </div>
+      </div>
+
+      <div class="ml-card">
+        <div class="ml-card-header">
+          <span class="ml-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+            Audio-MNIST K-Means Centroid Distances (0–9)
+          </span>
+          <span class="ml-badge" id="kmeansWinnerTag">Top 1: Digits 0–9</span>
+        </div>
+        <div class="canvas-container-sm">
+          <canvas id="kmeansCanvas"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Hero Digit Display Box -->
+    <main class="digit-display-panel">
+      <!-- Single Digit View (S) -->
+      <div class="single-mode-view" id="singleModeView">
+        <div class="display-card-single">
+          <div class="card-glow-bg"></div>
+          <div class="digit-huge" id="singleDigitValue">?</div>
+          <div class="phonetic-label" id="singlePhoneticLabel">Speak any number 0–9</div>
+        </div>
+      </div>
+
+      <!-- Multiple Digits View (M) -->
+      <div class="multi-mode-view hidden" id="multiModeView">
+        <div class="digit-cards-container" id="digitCardsContainer">
+          <div class="placeholder-msg">Speak a number sequence (e.g., "7 3 9 4", "forty-two", "007")</div>
+        </div>
+        <div class="formatted-result-bar hidden" id="formattedResultBar">
+          <span class="res-label">Full Value:</span>
+          <span class="res-value" id="formattedValueDisplay">-</span>
+        </div>
+      </div>
+
+      <!-- Raw Transcript & Model Info Box -->
+      <div class="transcript-box">
+        <div class="transcript-header">
+          <span class="tr-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            Speech Transcript &amp; Model Output
+          </span>
+          <span class="confidence-tag" id="confidenceTag">Confidence: --%</span>
+        </div>
+        <div class="transcript-text" id="transcriptText">Waiting for spoken input...</div>
+      </div>
+    </main>
+
+    <!-- Toolbar & Action Options -->
+    <div class="action-toolbar">
+      <div class="tool-group">
+        <button type="button" class="btn btn-secondary" id="copyBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          Copy Digits
+        </button>
+        <button type="button" class="btn btn-secondary" id="speakResultBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+          Read Aloud
+        </button>
+        <button type="button" class="btn btn-outline" id="clearBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          Clear
+        </button>
+      </div>
+
+      <div class="tool-group">
+        <label class="toggle-switch">
+          <input type="checkbox" id="ttsToggle" checked>
+          <span class="switch-slider"></span>
+          <span class="switch-label">Audio Feedback</span>
+        </label>
+        <select class="lang-select" id="langSelect">
+          <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="en-IN">English (India)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Voice Test Simulator Chips -->
+    <section class="presets-section">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path></svg>
+        Voice Test Simulator (Click to Test Recognition)
+      </h3>
+      <div class="preset-chips">
+        <button type="button" class="chip" data-speak="Seven" data-digit="7">"Seven"</button>
+        <button type="button" class="chip" data-speak="Three" data-digit="3">"Three"</button>
+        <button type="button" class="chip" data-speak="One Two Three Four" data-digit="1">"One Two Three Four"</button>
+        <button type="button" class="chip" data-speak="Nine Five Two Zero" data-digit="9">"Nine Five Two Zero"</button>
+        <button type="button" class="chip" data-speak="Double Zero Seven" data-digit="0">"Double Zero Seven"</button>
+        <button type="button" class="chip" data-speak="Forty Two" data-digit="4">"Forty Two"</button>
+        <button type="button" class="chip" data-speak="One Hundred and Twenty" data-digit="1">"One Hundred &amp; Twenty"</button>
+        <button type="button" class="chip" data-speak="Triple Five" data-digit="5">"Triple Five"</button>
+      </div>
+    </section>
+
+    <!-- Stats Dashboard -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-num" id="statTotalCount">0</span>
+        <span class="stat-name">Recognitions</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-num" id="statTopDigit">-</span>
+        <span class="stat-name">Most Spoken Digit</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-num" id="statAvgConfidence">0%</span>
+        <span class="stat-name">Avg Confidence</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-num" id="statLastTime">--:--</span>
+        <span class="stat-name">Last Recognition</span>
+      </div>
+    </section>
+
+    <!-- History Log Table -->
+    <section class="history-section">
+      <div class="history-header">
+        <h3 class="section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          Recognition History Log
+        </h3>
+        <div class="history-actions">
+          <button type="button" class="btn btn-sm btn-outline" id="exportHistoryBtn">Export JSON</button>
+          <button type="button" class="btn btn-sm btn-outline" id="clearHistoryBtn">Clear Log</button>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="history-table" id="historyTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Engine</th>
+              <th>Mode</th>
+              <th>Spoken / Input</th>
+              <th>Digits Extracted</th>
+              <th>Confidence</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody">
+            <tr class="empty-row">
+              <td colspan="7">No spoken recognition history recorded yet. Speak into the mic or test a sample above!</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Voice Digit Recognition S/M &bull; Audio-MNIST MFCC &amp; K-Means Engine</p>
+    </footer>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
